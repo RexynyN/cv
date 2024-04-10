@@ -12,15 +12,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/corona10/goimagehash"
 	hasher "github.com/corona10/goimagehash"
 	"gocv.io/x/gocv"
 )
 
+type VideoHash struct {
+	Path   string      `json:"path"`
+	Frames []FrameHash `json:"frames"`
+}
+
+type FrameHash struct {
+	PerceptionHash uint64 `json:"percep_hash"`
+	AverageHash    uint64 `json:"avg_hash"`
+	DifferenceHash uint64 `json:"diff_hash"`
+}
+
 func Benchmark(link1 string, link2 string) {
 	fmt.Println(link1)
 	fmt.Println(link2)
-
 	file1, _ := os.Open(link1)
 	file2, _ := os.Open(link2)
 	defer file1.Close()
@@ -47,22 +56,6 @@ func Benchmark(link1 string, link2 string) {
 }
 
 func main() {
-	type Foo struct {
-		Number int    `json:"number"`
-		Title  string `json:"title"`
-	}
-
-	jsonMarshalled, err := json.Marshal(Foo{Number: 1, Title: "test"})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println(string(jsonMarshalled))
-	err = os.WriteFile("test.json", jsonMarshalled, 0644)
-	if err != err {
-		log.Fatal(err)
-	}
-
 	Benchmark("frames/frame-0.jpg", "frames/frame-3.jpg")
 
 	start := time.Now()
@@ -76,7 +69,24 @@ func main() {
 	fmt.Println("Elapsed time: ", elapsed)
 }
 
-func FrameHashes(path string) []hasher.ImageHash {
+func LoadJsonHashes() {
+	return
+}
+
+func SaveJsonHashes(hashes VideoHash) {
+	jsonMarshalled, err := json.Marshal(hashes)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(string(jsonMarshalled))
+	err = os.WriteFile("test.json", jsonMarshalled, 0644)
+	if err != err {
+		log.Fatal(err)
+	}
+}
+
+func FrameHashes(path string) VideoHash {
 	tokens := strings.Split(path, "/")
 	file := tokens[len(tokens)-1]
 	vidcap, err := gocv.VideoCaptureFile(path)
@@ -86,7 +96,7 @@ func FrameHashes(path string) []hasher.ImageHash {
 
 	fmt.Println(file)
 	frame, success := gocv.NewMat(), true
-	count, hashes, timer := 0., make([]hasher.ImageHash, 0), 5000.
+	count, hashes, timer := 0., make([]FrameHash, 0), 5000.
 	for {
 		fmt.Println(count)
 		// Grab the next frame in the interval
@@ -102,20 +112,45 @@ func FrameHashes(path string) []hasher.ImageHash {
 		if err != nil {
 			log.Fatal(err)
 		}
-		// Calculate the hash and append
-		hash, err := hasher.PerceptionHash(imgMat)
-		if err != nil {
-			log.Fatal(err)
-		}
 
-		hashes = append(hashes, *hash)
+		frameHashes := ComputeHashes(imgMat)
+
+		hashes = append(hashes, frameHashes)
 		count++
 	}
-
-	return hashes
+	videoHash := VideoHash{
+		Path:   path,
+		Frames: hashes,
+	}
+	return videoHash
 }
 
-func PartialFrameHashes(path string, startPercent, endPercent float32) ([]goimagehash.ImageHash, error) {
+// Compute all three hashes for the given frame
+func ComputeHashes(frame image.Image) FrameHash {
+	avg, err := hasher.AverageHash(frame)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	diff, err := hasher.DifferenceHash(frame)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	perc, err := hasher.PerceptionHash(frame)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	frameHashes := FrameHash{
+		PerceptionHash: perc.GetHash(),
+		DifferenceHash: diff.GetHash(),
+		AverageHash:    avg.GetHash(),
+	}
+	return frameHashes
+}
+
+func PartialFrameHashes(path string, startPercent, endPercent float32) ([]hasher.ImageHash, error) {
 	if startPercent > endPercent {
 		return nil, errors.New("The starting percentage of the frame's height is bigger than the end percentage")
 	}
@@ -129,7 +164,7 @@ func PartialFrameHashes(path string, startPercent, endPercent float32) ([]goimag
 
 	fmt.Println(file)
 	frame, success := gocv.NewMat(), true
-	count, hashes, timer := 0., make([]goimagehash.ImageHash, 0), 5000.
+	count, hashes, timer := 0., make([]hasher.ImageHash, 0), 5000.
 	for {
 		fmt.Println(count)
 		// Grab the next frame in the interval
@@ -154,7 +189,7 @@ func PartialFrameHashes(path string, startPercent, endPercent float32) ([]goimag
 			log.Fatal(err)
 		}
 		// Calculate the hash and append
-		hash, err := goimagehash.PerceptionHash(imgMat)
+		hash, err := hasher.PerceptionHash(imgMat)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -165,36 +200,3 @@ func PartialFrameHashes(path string, startPercent, endPercent float32) ([]goimag
 
 	return hashes, nil
 }
-
-// func main() {
-// 	file1, _ := os.Open("sample1.jpg")
-// 	file2, _ := os.Open("sample2.jpg")
-// 	defer file1.Close()
-// 	defer file2.Close()
-
-// 	img1, _ := jpeg.Decode(file1)
-// 	img2, _ := jpeg.Decode(file2)
-// 	hash1, _ := goimagehash.AverageHash(img1)
-// 	hash2, _ := goimagehash.AverageHash(img2)
-// 	distance, _ := hash1.Distance(hash2)
-// 	fmt.Printf("Distance between images: %v\n", distance)
-
-// 	hash1, _ = goimagehash.DifferenceHash(img1)
-// 	hash2, _ = goimagehash.DifferenceHash(img2)
-// 	distance, _ = hash1.Distance(hash2)
-// 	fmt.Printf("Distance between images: %v\n", distance)
-// 	width, height := 8, 8
-// 	hash3, _ := goimagehash.ExtAverageHash(img1, width, height)
-// 	hash4, _ := goimagehash.ExtAverageHash(img2, width, height)
-// 	distance, _ = hash3.Distance(hash4)
-// 	fmt.Printf("Distance between images: %v\n", distance)
-// 	fmt.Printf("hash3 bit size: %v\n", hash3.Bits())
-// 	fmt.Printf("hash4 bit size: %v\n", hash4.Bits())
-
-// 	var b bytes.Buffer
-// 	foo := bufio.NewWriter(&b)
-// 	_ = hash4.Dump(foo)
-// 	foo.Flush()
-// 	bar := bufio.NewReader(&b)
-// 	hash5, _ := goimagehash.LoadExtImageHash(bar)
-// }

@@ -1,9 +1,5 @@
 package main
 
-import (
-	"fmt"
-)
-
 // Definindo a estrutura de um nó da árvore trie
 type TrieNode struct {
 	children map[uint64]*TrieNode // Mapeia os filhos do nó atual
@@ -65,24 +61,24 @@ func (node *TrieNode) searchHelper(hash uint64, index, distance int, result *[]u
 	}
 }
 
-func main() {
-	tree := NewTrieNode()
-	hashes := []uint64{12486923320150515769, 12254001406827791480, 12257299735051066979}
-	for _, hash := range hashes {
-		tree.Insert(hash)
-	}
+// func main() {
+// 	tree := NewTrieNode()
+// 	hashes := []uint64{12486923320150515769, 12254001406827791480, 12257299735051066979}
+// 	for _, hash := range hashes {
+// 		tree.Insert(hash)
+// 	}
 
-	// Buscando hashes com uma distância de hamming limitada em relação a um hash de referência
-	referenceHash := uint64(12486922770394827888)
-	distance := 16
-	fmt.Printf("Buscando hashes com distância de Hamming %d em relação a %d:\n", distance, referenceHash)
-	foundHashes := tree.Search(referenceHash, distance)
-	if len(foundHashes) > 0 {
-		fmt.Println("Encontrado! Hashes:")
-		for _, h := range foundHashes {
-			fmt.Printf("Hash: %d\n", h)
-		}
-	} else {
-		fmt.Println("Não encontrado!")
-	}
-}
+// 	// Buscando hashes com uma distância de hamming limitada em relação a um hash de referência
+// 	referenceHash := uint64(12486922770394827888)
+// 	distance := 16
+// 	fmt.Printf("Buscando hashes com distância de Hamming %d em relação a %d:\n", distance, referenceHash)
+// 	foundHashes := tree.Search(referenceHash, distance)
+// 	if len(foundHashes) > 0 {
+// 		fmt.Println("Encontrado! Hashes:")
+// 		for _, h := range foundHashes {
+// 			fmt.Printf("Hash: %d\n", h)
+// 		}
+// 	} else {
+// 		fmt.Println("Não encontrado!")
+// 	}
+// }

@@ -7,6 +7,10 @@ type TrieNode struct {
 	hashes   []uint64             // Armazena todos os hashes no nó final
 }
 
+func NewTrieTree() *TrieNode {
+	return NewTrieNode()
+}
+
 // Função para criar um novo nó da árvore trie
 func NewTrieNode() *TrieNode {
 	return &TrieNode{

@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	"io/fs"
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -56,10 +57,23 @@ func Benchmark(link1 string, link2 string) {
 }
 
 func main() {
-	Benchmark("frames/frame-0.jpg", "frames/frame-3.jpg")
+	PATH := "/mnt/e/Mídia/Inspiração/Personalidades/nem-tão-insp-assim/flirting-material/globber/testeruto"
+	// Benchmark("frames/frame-0.jpg", "frames/frame-3.jpg")
+
+	files := make([]string, 0)
+	err := filepath.Walk(PATH,
+		func(path string, info fs.FileInfo, err error) error {
+			if !info.IsDir() {
+				files = append(files, path)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	start := time.Now()
-	PATH := path.Join("/mnt/c/Users/Admin/Downloads/Imersão vídeo04 - Desenvolvimento do Home Broker com Nextjs.mp4")
 
 	// hashes := PartialFrameHashes(PATH)
 	hashes := FrameHashes(PATH)

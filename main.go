@@ -6,27 +6,41 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
-	"io/fs"
 	"log"
 	"os"
-	"path/filepath"
+	"path"
 	"strings"
+	"sync"
 	"time"
 
 	hasher "github.com/corona10/goimagehash"
+	"github.com/google/uuid"
 	"gocv.io/x/gocv"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 type VideoHash struct {
+	gorm.Model
 	Path   string      `json:"path"`
-	Frames []FrameHash `json:"frames"`
+	Frames []FrameHash `json:"frames" gorm:"constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
 }
 
 type FrameHash struct {
-	PerceptionHash uint64 `json:"percep_hash"`
-	AverageHash    uint64 `json:"avg_hash"`
-	DifferenceHash uint64 `json:"diff_hash"`
+	gorm.Model
+	PerceptionHash int64 `json:"percep_hash"`
+	AverageHash    int64 `json:"avg_hash"`
+	DifferenceHash int64 `json:"diff_hash"`
+	VideoHashID    uint
 }
+
+const (
+	NUM_WORKERS = 20
+	PATH        = "<>"
+	DB_NAME     = "VideoHashesV1.db"
+)
+
+var db *gorm.DB
 
 func Benchmark(link1 string, link2 string) {
 	fmt.Println(link1)
@@ -57,34 +71,40 @@ func Benchmark(link1 string, link2 string) {
 }
 
 func main() {
-	PATH := "/mnt/e/Mídia/Inspiração/Personalidades/nem-tão-insp-assim/flirting-material/globber/testeruto"
+	var err error
+	db, err = gorm.Open(sqlite.Open(DB_NAME), &gorm.Config{})
+	if err != nil {
+		panic(fmt.Sprintf("Error in creating the database: ", err))
+	}
+
+	db.AutoMigrate(&VideoHash{}, &FrameHash{})
 	// Benchmark("frames/frame-0.jpg", "frames/frame-3.jpg")
 
-	files := make([]string, 0)
-	err := filepath.Walk(PATH,
-		func(path string, info fs.FileInfo, err error) error {
-			if !info.IsDir() {
-				files = append(files, path)
-			}
-			return nil
-		},
-	)
+	files, err := os.ReadDir(PATH)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
+	}
+
+	dirs := []string{PATH}
+	for _, entry := range files {
+		if entry.IsDir() {
+			dirs = append(dirs, path.Join(PATH, entry.Name()))
+		}
 	}
 
 	start := time.Now()
 
-	// hashes := PartialFrameHashes(PATH)
-	hashes := FrameHashes(PATH)
+	wg := sync.WaitGroup{}
+	for _, dir := range dirs {
+		wg.Add(1)
+		go GoVideoDirHashes(dir, &wg)
+	}
+
+	wg.Wait()
+	fmt.Println("Passed the main waitgroup!")
+
 	elapsed := time.Since(start)
-
-	fmt.Println(hashes)
 	fmt.Println("Elapsed time: ", elapsed)
-}
-
-func LoadJsonHashes() {
-	return
 }
 
 func SaveJsonHashes(hashes VideoHash) {
@@ -93,73 +113,146 @@ func SaveJsonHashes(hashes VideoHash) {
 		log.Fatal(err)
 	}
 
-	fmt.Println(string(jsonMarshalled))
-	err = os.WriteFile("test.json", jsonMarshalled, 0644)
+	err = os.WriteFile(path.Join("json", uuid.New().String()+".json"), jsonMarshalled, 0644)
 	if err != err {
 		log.Fatal(err)
 	}
 }
 
-func FrameHashes(path string) VideoHash {
-	tokens := strings.Split(path, "/")
-	file := tokens[len(tokens)-1]
-	vidcap, err := gocv.VideoCaptureFile(path)
+func clearFileExtensions(dirPath string) []string {
+	entries, err := os.ReadDir(dirPath)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
-	fmt.Println(file)
+	// entries = slices.DeleteFunc(entries, func(entry fs.DirEntry) bool {
+	// 	return !strings.HasSuffix(entry.Name(), ".mp4")
+	// })
+
+	files := []string{}
+	for _, entry := range entries {
+		fileName := path.Join(dirPath, entry.Name())
+		files = append(files, fileName)
+	}
+	return files
+}
+
+func GoVideoDirHashes(dirPath string, wg *sync.WaitGroup) {
+	files := clearFileExtensions(dirPath)
+	innerWg := sync.WaitGroup{}
+
+	stride := int(len(files) / NUM_WORKERS) // How many files in each worker
+	ceil := stride * NUM_WORKERS            // Get the maximum if the len(files) is divisible by workers
+	lowBound, upBound := 0, 0
+	for count := range NUM_WORKERS {
+		upBound = ((count + 1) * stride) + 1
+		if upBound == ceil {
+			// Include the rest of the files left if the # of files is not
+			// Divisible by the # of workers
+			upBound += len(files) - ceil
+		}
+
+		innerWg.Add(1)
+		go GoSaveVideoHashes(files[lowBound:upBound], &innerWg)
+		lowBound = upBound + 1
+	}
+
+	fmt.Println("All workers done!")
+	innerWg.Wait()
+	wg.Done() // We're done :D
+	fmt.Println("Passed the WaitGroup!")
+}
+
+func GoSaveVideoHashes(paths []string, wg *sync.WaitGroup) {
+	videoHashes := []VideoHash{}
+	total := len(paths)
+	for idx, file := range paths {
+		// All of this just to log a damn file ffs
+		tokens := strings.Split(file, "/")
+		logF := tokens[len(tokens)-1]
+		fmt.Println(fmt.Sprintf("%d/%d -> %s", (idx + 1), total, logF))
+
+		// Do all the reading and hash calculation shenanigans
+		hash, err := ReadFrameHashes(file)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		videoHashes = append(videoHashes, hash)
+	}
+
+	for _, hash := range videoHashes {
+		// SaveJsonHashes(hash)
+		db.Create(&hash)
+	}
+	fmt.Println("Worker Done!")
+	wg.Done()
+	fmt.Println("Passed the WaitGroup!")
+}
+
+func ReadFrameHashes(path string) (VideoHash, error) {
+	// Open the video
+	vidcap, err := gocv.VideoCaptureFile(path)
+	if err != nil {
+		log.Println("Error reading the video: ", err)
+		return VideoHash{}, err
+	}
+
 	frame, success := gocv.NewMat(), true
 	count, hashes, timer := 0., make([]FrameHash, 0), 5000.
 	for {
-		fmt.Println(count)
 		// Grab the next frame in the interval
 		vidcap.Set(gocv.VideoCapturePosMsec, count*timer)
 		success = vidcap.Read(&frame)
+		// Usually it means the video is over, but if it was an error, I really don't care lmao
 		if !success {
 			break
 		}
-		gocv.IMWrite(fmt.Sprintf("frames/frame-%d.jpg", int(count)), frame)
+
+		// Save the Frame on disk
+		// gocv.IMWrite(fmt.Sprintf("frames/frame-%d.jpg", int(count)), frame)
 
 		// Transform the map into an image
 		imgMat, err := frame.ToImage()
 		if err != nil {
-			log.Fatal(err)
+			log.Println("Error transforming in an image: ", err)
+			continue
 		}
 
+		// Compute the Hashes and Append
 		frameHashes := ComputeHashes(imgMat)
-
 		hashes = append(hashes, frameHashes)
 		count++
 	}
+
+	// At least one Frame is a must
+	if len(hashes) == 0 {
+		return VideoHash{}, errors.New("No frame was read, error.")
+	}
+
+	// Let it live its best life
 	videoHash := VideoHash{
 		Path:   path,
 		Frames: hashes,
 	}
-	return videoHash
+	return videoHash, nil
 }
 
 // Compute all three hashes for the given frame
 func ComputeHashes(frame image.Image) FrameHash {
-	avg, err := hasher.AverageHash(frame)
-	if err != nil {
-		log.Fatal(err)
+	// If this is true, some shit went down
+	if frame == nil {
+		return FrameHash{}
 	}
 
-	diff, err := hasher.DifferenceHash(frame)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	perc, err := hasher.PerceptionHash(frame)
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	// Calculate all of the hashes and return it
+	avg, _ := hasher.AverageHash(frame)
+	diff, _ := hasher.DifferenceHash(frame)
+	perc, _ := hasher.PerceptionHash(frame)
 	frameHashes := FrameHash{
-		PerceptionHash: perc.GetHash(),
-		DifferenceHash: diff.GetHash(),
-		AverageHash:    avg.GetHash(),
+		PerceptionHash: int64(perc.GetHash()),
+		DifferenceHash: int64(diff.GetHash()),
+		AverageHash:    int64(avg.GetHash()),
 	}
 	return frameHashes
 }

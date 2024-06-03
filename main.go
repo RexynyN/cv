@@ -36,7 +36,7 @@ type FrameHash struct {
 
 const (
 	NUM_WORKERS = 20
-	PATH        = "<>"
+	PATH        = "/mnt/e/Mídia/Inspiração/Personalidades/nem-tão-insp-assim/flirting-material/globber/testeru"
 	DB_NAME     = "VideoHashesV1.db"
 )
 

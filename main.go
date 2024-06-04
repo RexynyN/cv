@@ -36,7 +36,7 @@ type FrameHash struct {
 
 const (
 	NUM_WORKERS = 20
-	PATH        = "/mnt/e/Mídia/Inspiração/Personalidades/nem-tão-insp-assim/flirting-material/globber/testeru"
+	PATH        = "<path>"
 	DB_NAME     = "VideoHashesV1.db"
 )
 
@@ -249,12 +249,11 @@ func ComputeHashes(frame image.Image) FrameHash {
 	avg, _ := hasher.AverageHash(frame)
 	diff, _ := hasher.DifferenceHash(frame)
 	perc, _ := hasher.PerceptionHash(frame)
-	frameHashes := FrameHash{
+	return FrameHash{
 		PerceptionHash: int64(perc.GetHash()),
 		DifferenceHash: int64(diff.GetHash()),
 		AverageHash:    int64(avg.GetHash()),
 	}
-	return frameHashes
 }
 
 func PartialFrameHashes(path string, startPercent, endPercent float32) ([]hasher.ImageHash, error) {

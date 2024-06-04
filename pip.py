@@ -1,3 +1,4 @@
+import os
 import cv2
 import imagehash as ih
 import sqlalchemy as sqla
@@ -34,26 +35,6 @@ class VideoHash(Base):
     path = Column(String) 
 
     frames = relationship("FrameHash", order_by=FrameHash.id, back_populates="frame_hashes") 
-
-
-Base.create_all(engine)
-session = sessionmaker(bind=engine)
-
-# # Create all records 
-# session.add_all([
-#     frame,
-#     frame,
-# ])
-
-# Needs to commit an insertion
-session.commit()
-
-# Raw SQL
-sql = sqla.text("SELECT product_id, BIT_COUNT(phash1 ^ phash2) as hd from A ORDER BY hd ASC;") 
-rs = engine.execute(sql)
-
-for row in rs:
-    print(row)
 
 
 
@@ -97,3 +78,16 @@ def run_workers(paths: list[str]):
     with Pool(processes=NUM_WORKERS) as pool:
         leftovers = pool.map(add_video_hash, paths)
         leftovers = [overs for overs in leftovers if overs]
+
+def get_all_files(dir_path: str) -> list[str]:
+    for a, b, c in os.walk(dir_path):
+
+Base.create_all(engine)
+session = sessionmaker(bind=engine)
+
+
+# Raw SQL
+sql = sqla.text("SELECT product_id, BIT_COUNT(phash1 ^ phash2) as hd from A ORDER BY hd ASC;") 
+rs = engine.execute(sql)
+for row in rs:
+    print(row)

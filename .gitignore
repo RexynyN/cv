@@ -5,7 +5,9 @@
 # Custom 
 *.jpg
 *.png
+*.db
 frames/
+cropper/
 
 
 # Binaries for programs and plugins
